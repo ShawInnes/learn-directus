@@ -1,0 +1,85 @@
+name: directus
+services:
+  directus:
+    image: directus/directus:latest
+    #build: 
+    #  context: ./ 
+    ports:
+      - 8055:8055
+    volumes:
+      - $PWD/data/uploads:/directus/uploads
+    environment:
+      KEY: '440116bc69fdd51499628afd3ff310f4'
+      SECRET: 'a9027ecd3b4b8651375eb36b93f72ac0'
+      EXTENSIONS_AUTO_RELOAD: true
+      DB_CLIENT: 'postgres'
+      DB_HOST: 'postgres'
+      DB_PORT: 5432
+      DB_DATABASE: directus
+      DB_USER: directus
+      DB_PASSWORD: directus
+      WEBSOCKETS_ENABLED: true
+      PUBLIC_URL: 'http://localhost:8055/'      
+      AUTH_PROVIDERS: keycloak
+      AUTH_DISABLE_DEFAULT: false
+      AUTH_KEYCLOAK_DRIVER: "openid"
+      AUTH_KEYCLOAK_CLIENT_ID: "..."
+      AUTH_KEYCLOAK_CLIENT_SECRET: "..."
+      AUTH_KEYCLOAK_ISSUER_URL: "http://localhost:8080/realms/<your_keycloak_realm>/.well-known/openid-configuration"
+      AUTH_KEYCLOAK_IDENTIFIER_KEY: "email"
+      #AUTH_PROVIDERS: cognito
+      #AUTH_COGNITO_DRIVER: openid
+      #AUTH_COGNITO_CLIENT_ID: 39f56ephb4oukdqf5d4t2tm5nl
+      #AUTH_COGNITO_CLIENT_SECRET: 12dqj7cnfa4s1fqmcc6a95bl0ietqtfjsqqsq91t7funm1l3gn8p
+      #AUTH_COGNITO_ISSUER_URL: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_aCDH8lmHN/.well-known/openid-configuration
+      #AUTH_COGNITO_ALLOW_PUBLIC_REGISTRATION: true
+      #AUTH_COGNITO_DEFAULT_ROLE_ID: 0fcdec2b-3efb-44c1-8f91-d743cc70d3d7
+      #AUTH_COGNITO_SCOPE: "openid email profile"
+      #AUTH_COGNITO_ICON: aws
+      STORAGE_LOCATIONS: s3
+      STORAGE_S3_DRIVER: s3
+      STORAGE_S3_KEY: s3key
+      STORAGE_S3_SECRET: s3secret
+      STORAGE_S3_BUCKET: directus
+      STORAGE_S3_ENDPOINT: 'http://minio:9000'
+      STORAGE_S3_REGION: ap-southeast-2
+      STORAGE_S3_FORCE_PATH_STYLE: true
+      ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 12000
+
+  postgres:
+    image: postgis/postgis
+    environment:
+      - POSTGRES_USER=directus
+      - POSTGRES_PASSWORD=directus
+      - POSTGRES_DB=directus
+
+  keycloak:
+    image: bitnami/keycloak:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - "/config/keycloak.conf:/bitnami/keycloak/conf/keycloak.conf:ro"
+    environment:
+      - KEYCLOAK_HOSTNAME_STRICT=false
+      - KEYCLOAK_CREATE_ADMIN_USER=true
+      - KEYCLOAK_ADMIN_USER=keycloak
+      - KEYCLOAK_ADMIN_PASSWORD=keycloak
+      - KEYCLOAK_DATABASE_VENDOR=postgresql
+      - KEYCLOAK_DATABASE_HOST=postgres
+      - KEYCLOAK_DATABASE_NAME=keycloak
+      - KEYCLOAK_DATABASE_USER=keycloak
+      - KEYCLOAK_DATABASE_PASSWORD=keycloak
+    depends_on:
+      - postgres
+
+  minio:
+    image: quay.io/minio/minio
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - $PWD/data/minio:/data
+    environment:
+      MINIO_ROOT_USER: s3key
+      MINIO_ROOT_PASSWORD: s3secret
+    command: server --console-address ":9001" /data
