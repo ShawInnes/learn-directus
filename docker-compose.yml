@@ -1,41 +1,78 @@
 name: directus
 services:
+  postgres:
+    image: postgis/postgis
+    volumes:
+      - $PWD/bootstrap/init-directus-db.sh:/docker-entrypoint-initdb.d/init-directus-db.sh
+      - $PWD/bootstrap/init-keycloak-db.sh:/docker-entrypoint-initdb.d/init-keycloak-db.sh
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=admin
+
+  traefik:
+    image: traefik:latest
+    command:
+      # - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    privileged: true
+
   directus:
     image: directus/directus:latest
     #build: 
     #  context: ./ 
-    ports:
-      - 8055:8055
+    # ports:
+    #   - 8055:8055
     volumes:
       - $PWD/data/uploads:/directus/uploads
+      - $PWD/extensions:/directus/extensions
     environment:
+      EXTENSIONS_AUTO_RELOAD: true
+      WEBSOCKETS_ENABLED: true
+      PUBLIC_URL: 'http://directus.localhost/'
+
       KEY: '440116bc69fdd51499628afd3ff310f4'
       SECRET: 'a9027ecd3b4b8651375eb36b93f72ac0'
-      EXTENSIONS_AUTO_RELOAD: true
+
       DB_CLIENT: 'postgres'
       DB_HOST: 'postgres'
       DB_PORT: 5432
       DB_DATABASE: directus
       DB_USER: directus
       DB_PASSWORD: directus
-      WEBSOCKETS_ENABLED: true
-      PUBLIC_URL: 'http://localhost:8055/'      
+
+      REFRESH_TOKEN_COOKIE_SECURE: false
+      REFRESH_TOKEN_COOKIE_SAME_SITE: "lax"
+
       AUTH_PROVIDERS: keycloak
-      AUTH_DISABLE_DEFAULT: false
+      AUTH_DISABLE_DEFAULT: true
       AUTH_KEYCLOAK_DRIVER: "openid"
-      AUTH_KEYCLOAK_CLIENT_ID: "..."
-      AUTH_KEYCLOAK_CLIENT_SECRET: "..."
-      AUTH_KEYCLOAK_ISSUER_URL: "http://localhost:8080/realms/<your_keycloak_realm>/.well-known/openid-configuration"
-      AUTH_KEYCLOAK_IDENTIFIER_KEY: "email"
+      AUTH_KEYCLOAK_CLIENT_ID: "directus"
+      AUTH_KEYCLOAK_CLIENT_SECRET: "iiBI8oDeXJLWhTpdqSYxrJBsPgzU6P2o"
+      AUTH_KEYCLOAK_ISSUER_URL: "http://keycloak:8080/realms/directus/.well-known/openid-configuration"
+      AUTH_KEYCLOAK_SCOPE: "openid email profile"
+      AUTH_KEYCLOAK_DEFAULT_ROLE_ID: "0fcdec2b-3efb-44c1-8f91-d743cc70d3d7"
+      AUTH_KEYCLOAK_ALLOW_PUBLIC_REGISTRATION: true
+
       #AUTH_PROVIDERS: cognito
       #AUTH_COGNITO_DRIVER: openid
-      #AUTH_COGNITO_CLIENT_ID: 39f56ephb4oukdqf5d4t2tm5nl
-      #AUTH_COGNITO_CLIENT_SECRET: 12dqj7cnfa4s1fqmcc6a95bl0ietqtfjsqqsq91t7funm1l3gn8p
+      #AUTH_COGNITO_CLIENT_ID: ...
+      #AUTH_COGNITO_CLIENT_SECRET: ...
       #AUTH_COGNITO_ISSUER_URL: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_aCDH8lmHN/.well-known/openid-configuration
       #AUTH_COGNITO_ALLOW_PUBLIC_REGISTRATION: true
       #AUTH_COGNITO_DEFAULT_ROLE_ID: 0fcdec2b-3efb-44c1-8f91-d743cc70d3d7
       #AUTH_COGNITO_SCOPE: "openid email profile"
       #AUTH_COGNITO_ICON: aws
+
       STORAGE_LOCATIONS: s3
       STORAGE_S3_DRIVER: s3
       STORAGE_S3_KEY: s3key
@@ -45,20 +82,22 @@ services:
       STORAGE_S3_REGION: ap-southeast-2
       STORAGE_S3_FORCE_PATH_STYLE: true
       ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 12000
+    depends_on:
+      - keycloak
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.directus.loadbalancer.server.port=8055"
+      - "traefik.http.routers.directus.rule=Host(`directus.localhost`)"
+      - "traefik.http.routers.directus.entrypoints=web"
 
-  postgres:
-    image: postgis/postgis
-    environment:
-      - POSTGRES_USER=directus
-      - POSTGRES_PASSWORD=directus
-      - POSTGRES_DB=directus
-
+# import tricks
+# https://wkrzywiec.medium.com/create-and-configure-keycloak-oauth-2-0-authorization-server-f75e2f6f6046
   keycloak:
     image: bitnami/keycloak:latest
-    ports:
-      - "8080:8080"
+    # ports:
+    #   - "8080:8080"
     volumes:
-      - "/config/keycloak.conf:/bitnami/keycloak/conf/keycloak.conf:ro"
+      - $PWD/bootstrap/realm-directus.json:/opt/bitnami/keycloak/data/import/realm-directus.json
     environment:
       - KEYCLOAK_HOSTNAME_STRICT=false
       - KEYCLOAK_CREATE_ADMIN_USER=true
@@ -69,14 +108,21 @@ services:
       - KEYCLOAK_DATABASE_NAME=keycloak
       - KEYCLOAK_DATABASE_USER=keycloak
       - KEYCLOAK_DATABASE_PASSWORD=keycloak
+      - KEYCLOAK_EXTRA_ARGS="--import-realm"
     depends_on:
       - postgres
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+      - "traefik.http.routers.keycloak.rule=Host(`keycloak.localhost`)"
+      - "traefik.http.routers.keycloak.entrypoints=web"
 
   minio:
     image: quay.io/minio/minio
-    ports:
-      - 9000:9000
-      - 9001:9001
+    # ports:
+    #   - 9000:9000
+    #   - 9001:9001
     volumes:
       - $PWD/data/minio:/data
     environment:
