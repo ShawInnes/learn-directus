@@ -1,15 +1,5 @@
 name: directus
 services:
-  postgres:
-    image: postgis/postgis
-    volumes:
-      - $PWD/bootstrap/init-directus-db.sh:/docker-entrypoint-initdb.d/init-directus-db.sh
-      - $PWD/bootstrap/init-keycloak-db.sh:/docker-entrypoint-initdb.d/init-keycloak-db.sh
-    environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=admin
-      - POSTGRES_DB=admin
-
   traefik:
     image: traefik:latest
     command:
@@ -26,12 +16,71 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     privileged: true
 
+  postgres:
+    image: postgis/postgis
+    volumes:
+      - $PWD/bootstrap/init-directus-db.sh:/docker-entrypoint-initdb.d/init-directus-db.sh
+      - $PWD/bootstrap/init-keycloak-db.sh:/docker-entrypoint-initdb.d/init-keycloak-db.sh
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=admin
+    healthcheck:
+      test: ["CMD-SHELL", "PGUSER=admin", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# import tricks
+# https://wkrzywiec.medium.com/create-and-configure-keycloak-oauth-2-0-authorization-server-f75e2f6f6046
+  keycloak:
+    image: bitnami/keycloak:latest
+    # ports:
+    #   - "8080:8080"
+    volumes:
+      - $PWD/bootstrap/realm-directus.json:/opt/bitnami/keycloak/data/import/realm-directus.json
+    environment:
+      - KEYCLOAK_HOSTNAME_STRICT=false
+      - KEYCLOAK_CREATE_ADMIN_USER=true
+      - KEYCLOAK_ADMIN_USER=keycloak
+      - KEYCLOAK_ADMIN_PASSWORD=keycloak
+      - KEYCLOAK_DATABASE_VENDOR=postgresql
+      - KEYCLOAK_DATABASE_HOST=postgres
+      - KEYCLOAK_DATABASE_NAME=keycloak
+      - KEYCLOAK_DATABASE_USER=keycloak
+      - KEYCLOAK_DATABASE_PASSWORD=keycloak
+      - KEYCLOAK_EXTRA_ARGS="--import-realm --health-enabled=true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 2s
+      retries: 15
+    depends_on:
+      - postgres
+      - traefik
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+      - "traefik.http.routers.keycloak.rule=Host(`keycloak.localhost`)"
+      - "traefik.http.routers.keycloak.entrypoints=web"
+
+  minio:
+    image: quay.io/minio/minio
+    # ports:
+    #   - 9000:9000
+    #   - 9001:9001
+    volumes:
+      - $PWD/data/minio:/data
+    environment:
+      MINIO_ROOT_USER: s3key
+      MINIO_ROOT_PASSWORD: s3secret
+    command: server --console-address ":9001" /data
+
+
   directus:
     image: directus/directus:latest
-    #build: 
-    #  context: ./ 
-    # ports:
-    #   - 8055:8055
+    restart: on-failure
     volumes:
       - $PWD/data/uploads:/directus/uploads
       - $PWD/extensions:/directus/extensions
@@ -84,48 +133,10 @@ services:
       ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 12000
     depends_on:
       - keycloak
+      - postgres
+
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.directus.loadbalancer.server.port=8055"
       - "traefik.http.routers.directus.rule=Host(`directus.localhost`)"
       - "traefik.http.routers.directus.entrypoints=web"
-
-# import tricks
-# https://wkrzywiec.medium.com/create-and-configure-keycloak-oauth-2-0-authorization-server-f75e2f6f6046
-  keycloak:
-    image: bitnami/keycloak:latest
-    # ports:
-    #   - "8080:8080"
-    volumes:
-      - $PWD/bootstrap/realm-directus.json:/opt/bitnami/keycloak/data/import/realm-directus.json
-    environment:
-      - KEYCLOAK_HOSTNAME_STRICT=false
-      - KEYCLOAK_CREATE_ADMIN_USER=true
-      - KEYCLOAK_ADMIN_USER=keycloak
-      - KEYCLOAK_ADMIN_PASSWORD=keycloak
-      - KEYCLOAK_DATABASE_VENDOR=postgresql
-      - KEYCLOAK_DATABASE_HOST=postgres
-      - KEYCLOAK_DATABASE_NAME=keycloak
-      - KEYCLOAK_DATABASE_USER=keycloak
-      - KEYCLOAK_DATABASE_PASSWORD=keycloak
-      - KEYCLOAK_EXTRA_ARGS="--import-realm"
-    depends_on:
-      - postgres
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
-      - "traefik.http.routers.keycloak.rule=Host(`keycloak.localhost`)"
-      - "traefik.http.routers.keycloak.entrypoints=web"
-
-  minio:
-    image: quay.io/minio/minio
-    # ports:
-    #   - 9000:9000
-    #   - 9001:9001
-    volumes:
-      - $PWD/data/minio:/data
-    environment:
-      MINIO_ROOT_USER: s3key
-      MINIO_ROOT_PASSWORD: s3secret
-    command: server --console-address ":9001" /data
