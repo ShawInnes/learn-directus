@@ -11,10 +11,15 @@ services:
       - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
-      - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     privileged: true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.entrypoints=web"
 
   postgres:
     image: postgis/postgis
@@ -57,8 +62,6 @@ services:
       retries: 15
     depends_on:
       - postgres
-      - traefik
-
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
@@ -76,7 +79,6 @@ services:
       MINIO_ROOT_USER: s3key
       MINIO_ROOT_PASSWORD: s3secret
     command: server --console-address ":9001" /data
-
 
   directus:
     image: directus/directus:latest

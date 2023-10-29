@@ -1,6 +1,17 @@
+# Directus with Keycloak, Minio, Traefik
 
+* custom migration to create an Admin Role with a well-known ID
+* bootstrapping scripts to create databases 
+* import a realm file for keycloak with well-known client id and secret
 
-npx directus roles create --role Administrators --admin true
-npx directus roles create --role User
+To start just run docker compose
 
-docker compose exec -it directus npx directus roles create --role Administraotrs --admin true
+```
+docker compose up -d 
+```
+
+## URLS
+
+* directus.localhost
+* keycloak.localhost
+* traefik.localhost
